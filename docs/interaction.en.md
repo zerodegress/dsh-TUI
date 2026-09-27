@@ -6,7 +6,7 @@
 
 | Key | Behavior |
 | --- | --- |
-| `Enter` | Send while idle; steer text into the running turn at its next step boundary; confirm an open menu |
+| `Enter` | Send while idle; while the model works, plain text steers into the running turn at its next step boundary and a recognized `/command` still runs as a command (mid-turn-unsafe ones refuse with their own notice); confirm an open menu |
 | `Tab` | Complete a `/` command or `@` file; while the model is working, queue non-empty input as a post-turn follow-up |
 | `Ctrl+Enter` | Interrupt the running turn and process the input immediately |
 | `Shift+Enter` / `Ctrl+J` | Insert a newline at the caret; `Ctrl+J` (LF) is the fallback when the terminal cannot report the Shift modifier; macOS Terminal.app uses `Option+Enter` |
@@ -213,7 +213,7 @@ While the model is working, three paths have different placement:
 
 | Action | Placement |
 | --- | --- |
-| `Enter` | Steer: deliver to the running turn at its next step boundary |
+| `Enter` | Plain text steers: deliver to the running turn at its next step boundary; a recognized `/command` runs as a command instead (#1072) |
 | `Tab` | Follow-up: wait until the current turn finishes |
 | `Ctrl+Enter` | Interrupt: stop the turn and deliver immediately |
 

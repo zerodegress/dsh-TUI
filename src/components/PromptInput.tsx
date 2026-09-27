@@ -1567,7 +1567,8 @@ export function PromptInput({
    * The Enter main path, shared by the inline prompt, the expanded
    * editor's Ctrl+Enter, and its Send button:
    * - command menu open → run the SELECTED command (never send `/mo`);
-   * - model working → STEER into the running turn (next step boundary,
+   * - model working → a recognized `/command` runs as a command (#1072);
+   *   any other text STEERs into the running turn (next step boundary,
    *   agent continues — the "immediate" send; Codex/pi semantics);
    * - otherwise → submit directly (or run a unique command).
    * Reads valueRef so a key batch (typing + Enter in one stdin read)
@@ -1598,19 +1599,14 @@ export function PromptInput({
       }
     }
     if (channel.working && value.trim() !== '') {
-      // Immediate-command semantics: /btw and /skills are exempt from
-      // steering — neither command interrupts the running turn. Hidden
-      // UI-only easter eggs (e.g. /deepseek) are also safe to run while
-      // streaming. Every other input keeps the steer behavior so /new
-      // /model etc. stay idle-only.
-      const parsed = value.startsWith('/') ? parseCommandName(value) : undefined
-      if (parsed !== undefined && (
-        ((parsed.name === 'btw' || parsed.name === 'skills')
-          && channel.commandList.some(c => c.name === parsed.name))
-        || isHiddenCommandName(parsed.name)
-      )) {
-        if (tryRunCommand(value)) return
-      }
+      // A recognized command typed mid-turn is a dsh command, not a steer
+      // prompt (issue #1072): dispatch through the idle path's recognition
+      // (merged command list + hidden names). Commands that must not run
+      // mid-turn refuse through their own guards (/new, /model, /preset,
+      // /compact, /fork …), and model-routed lines (unknown /names, skill
+      // prompts) fall through to the steer below. Plain text keeps the steer
+      // behavior: injected at the next step boundary of the RUNNING turn.
+      if (value.startsWith('/') && tryRunCommand(value)) return
       steerSend(value)
       return
     }

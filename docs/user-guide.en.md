@@ -68,7 +68,7 @@ dsh-tui
 
 | Key | Action |
 |---|---|
-| `Enter` | idle = send; **model working = steer** (inject a next-step boundary, no interrupt); menu open = confirm selection |
+| `Enter` | idle = send; **model working = steer** (plain text injects a next-step boundary, no interrupt; a recognized `/command` still runs as a command); menu open = confirm selection |
 | `Tab` | complete `/` command or `@` file; **model working = follow-up** (queue after the current turn) |
 | `Ctrl+Enter` (⌘Enter) | interrupt the current turn and send the input now |
 | `Shift+Enter` / `Ctrl+J` | newline (`Option+Enter` is the mac Terminal.app fallback) |
@@ -340,7 +340,7 @@ Command-line resume: `dsh-tui --resume` (last session) / `dsh-tui --resume <id>`
 ### 4.3 Message delivery semantics (while the model is working)
 
 Keys are in §2.1:
-- `Enter` = **steer** (inject a next-step boundary, no interrupt)
+- `Enter` = **steer** (plain text injects a next-step boundary, no interrupt); a recognized `/command` still runs as a command — mid-turn-unsafe ones (e.g. `/new`, `/model`) refuse with their own notice (#1072)
 - `Tab` = **follow-up** (queue after the turn)
 - `Ctrl+Enter` = **interrupt** (interrupt and send)
 - `Alt+Up` bring the last unhandled message back

@@ -174,8 +174,8 @@ stdin.write(batchedCommand([
 ]))
 
 check(
-  'batched idle-only commands keep the existing steer behavior while streaming',
-  await settled(() => commands.length === 1 && steered.length === 2 && steered[1] === '/model'),
+  'batched recognized commands dispatch locally while streaming (#1072)',
+  await settled(() => commands.length === 2 && commands[1] === 'model' && steered.length === 1),
   `commands=${JSON.stringify(commands)} steered=${JSON.stringify(steered)}`,
 )
 
@@ -194,8 +194,8 @@ stdin.write(batchedCommand([
 
 check(
   'declined /skills falls back to steer while streaming',
-  await settled(() => commands.length === 2 && commands[1] === 'skills'
-    && steered.length === 3 && steered[2] === '/skills'),
+  await settled(() => commands.length === 3 && commands[2] === 'skills'
+    && steered.length === 2 && steered[1] === '/skills'),
   `commands=${JSON.stringify(commands)} steered=${JSON.stringify(steered)}`,
 )
 

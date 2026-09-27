@@ -1,9 +1,10 @@
 /**
  * Headless verification of prompt send semantics: while the model streams,
- * Enter steers, Tab queues a followup, and Ctrl+Enter interrupts; a complete
- * piped line keeps the legacy direct-submit path. A `\r`+`\n` double event
- * must not send twice, and Esc either delivers pending input or clears the
- * draft according to the current state.
+ * Enter steers plain text but dispatches a recognized slash command as a
+ * command (issue #1072), Tab queues a followup, and Ctrl+Enter interrupts;
+ * a complete piped line keeps the legacy direct-submit path. A `\r`+`\n`
+ * double event must not send twice, and Esc either delivers pending input or
+ * clears the draft according to the current state.
  *
  * Run with plain node against the compiled lib: `node scripts/verify-queue.mjs`
  * (assertions check Chinese notices; DSH_TUI_LANG defaults to zh here).
@@ -63,6 +64,10 @@ function makeChannel(working) {
     modeIndex: 0,
     cycleMode() {},
     commandList: [],
+    // A `/`-prefixed draft asks for completions on every render; returning
+    // none keeps the suggestion overlay shut so Enter deterministically
+    // hits the working branch under test.
+    commandCompletions: () => [],
     notifications: [],
     contextWindow: undefined,
     get pending() { return pending },
@@ -115,6 +120,67 @@ async function run() {
     check('working Enter does NOT followup-queue', channel.submitted.length === 0)
     check('input cleared after steer', !/❯ hello/.test(last))
     check('steer notice shown', channel.notified.some(n => n.text.includes('已插话')), JSON.stringify(channel.notified))
+    instance.unmount()
+  }
+
+  // ---- Scenario 1b: working — Enter on a RECOGNIZED command dispatches it
+  // as a dsh command instead of steering it into the running turn (#1072).
+  // The fake's commandCompletions returns [] so the suggestion overlay stays
+  // shut and Enter hits the working branch — the reported repro shape: a
+  // command line with args/trailing space closes the overlay.
+  {
+    const { stdout, stderr, stdin } = makeStreams()
+    const channel = makeChannel(true)
+    channel.commandList = [{ name: 'help', description: 'Show shortcuts and commands' }]
+    const ran = []
+    const instance = await render(
+      React.createElement(PromptInput, {
+        channel,
+        helpOpen: false,
+        onToggleHelp() {},
+        onRunCommand(name, rawInput) { ran.push({ name, rawInput }); return true },
+        selectionActive: false,
+      }),
+      { stdout, stderr, stdin, exitOnCtrlC: false, patchConsole: false },
+    )
+    await sleep(600)
+    stdin.write('/help')
+    await sleep(200)
+    stdin.write('\r')
+    await sleep(300)
+    const last = toPlain(stdout.frames.at(-1) ?? '')
+    check('working Enter runs a recognized command', ran.length === 1 && ran[0].name === 'help', JSON.stringify(ran))
+    check('working Enter does NOT steer a recognized command', channel.steered.length === 0, JSON.stringify(channel.steered))
+    check('working Enter does NOT queue a recognized command', channel.submitted.length === 0)
+    check('command draft cleared after dispatch', !/❯ \/help/.test(last))
+    instance.unmount()
+  }
+
+  // ---- Scenario 1c: working — an UNRECOGNIZED /line keeps the steer
+  // behavior: like any other text it flows to the model (idle sends it as a
+  // prompt; mid-turn it joins the running turn).
+  {
+    const { stdout, stderr, stdin } = makeStreams()
+    const channel = makeChannel(true)
+    channel.commandList = [{ name: 'help', description: 'Show shortcuts and commands' }]
+    const ran = []
+    const instance = await render(
+      React.createElement(PromptInput, {
+        channel,
+        helpOpen: false,
+        onToggleHelp() {},
+        onRunCommand(name, rawInput) { ran.push({ name, rawInput }); return true },
+        selectionActive: false,
+      }),
+      { stdout, stderr, stdin, exitOnCtrlC: false, patchConsole: false },
+    )
+    await sleep(600)
+    stdin.write('/nope')
+    await sleep(200)
+    stdin.write('\r')
+    await sleep(300)
+    check('working Enter steers an unrecognized /line', channel.steered.length === 1 && channel.steered[0] === '/nope', JSON.stringify(channel.steered))
+    check('unrecognized /line runs no command', ran.length === 0, JSON.stringify(ran))
     instance.unmount()
   }
 
