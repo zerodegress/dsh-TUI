@@ -10,7 +10,11 @@
  *   transparent: true and no background — Sixel paints only her pixels
  *   and the terminal background/wallpaper shows through around her
  *   silhouette;
- * - the placement honors the caller's cell budget (a non-empty box).
+ * - the placement honors the caller's cell budget (a non-empty box), and the
+ *   raster handed to the protocol is that box's own physical pixels with the
+ *   artwork scaled into them — a terminal that paints a payload without
+ *   scaling it must find her as large as the reserved slot (issue #1381,
+ *   where she arrived at her native pixel size inside a HiDPI slot).
  *
  * Run: node --import tsx/esm scripts/verify-maid-portrait-transparent.tsx
  */
@@ -24,6 +28,7 @@ import { AlternateScreen, Box, render } from '../src/ui.js'
 import { MaidPortrait } from '../src/components/maidPortrait.js'
 import { ThemeProvider } from '../src/components/design-system/ThemeProvider.js'
 import instances from '../src/ink/instances.js'
+import { fitTerminalImageSource } from '../src/ink/terminal-image.js'
 import type { TerminalImagePlacement, TerminalImageSource } from '../src/ink/terminal-image.js'
 
 // A stand-in for the trimmed whale-girl art: fully transparent surround
@@ -99,5 +104,44 @@ assert.ok(placement !== undefined, 'the portrait reaches the frame as a transcri
 assert.equal(placement.transparent, true, 'the portrait floats transparent — Sixel paints only her pixels')
 assert.equal(placement.background, undefined, 'no backing colour slab behind her')
 assert.ok(placement.columns > 0 && placement.rows > 0, 'the placement honors the cell budget')
+// The cell size the fake terminal reports above (10x20), so the box's physical
+// pixels are exactly the placement's cells.
+const fitted = fitTerminalImageSource(
+  portrait,
+  placement.columns,
+  placement.rows,
+  { width: 10, height: 20 },
+  'transcript',
+)
+assert.deepEqual(
+  [fitted.width, fitted.height],
+  [placement.columns * 10, placement.rows * 20],
+  'the uploaded raster is the placement box physical pixels, not a smaller canvas the terminal has to scale up',
+)
+// Her drawn extent inside that raster: transparent margins stay transparent,
+// and the artwork is enlarged to the box rather than centered at 64x64.
+let left = fitted.width
+let top = fitted.height
+let right = -1
+let bottom = -1
+for (let y = 0; y < fitted.height; y++) {
+  for (let x = 0; x < fitted.width; x++) {
+    if (fitted.data[(y * fitted.width + x) * 4 + 3] === 0) continue
+    if (x < left) left = x
+    if (x > right) right = x
+    if (y < top) top = y
+    if (y > bottom) bottom = y
+  }
+}
+assert.ok(
+  bottom - top + 1 >= fitted.height * 0.7 && right - left + 1 >= fitted.width * 0.4,
+  `she fills the reserved slot (drawn ${right - left + 1}x${bottom - top + 1} of ${fitted.width}x${fitted.height})`,
+)
+// Upscaling runs through the premultiplied bilinear path: a flat interior must
+// come back opaque and byte-identical, instead of picking up dark fringes.
+const center = (Math.floor(fitted.height / 2) * fitted.width + Math.floor(fitted.width / 2)) * 4
+assert.deepEqual([...fitted.data.subarray(center, center + 4)], [240, 200, 210, 255],
+  'her body stays opaque and keeps her colours at the center of the box')
+assert.equal(fitted.data[3], 0, 'the transparent surround stays empty, so no slab is painted behind her')
 await app.unmount()
 console.log('verify-maid-portrait-transparent: all assertions passed')

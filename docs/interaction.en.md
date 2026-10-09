@@ -64,10 +64,11 @@ side panel (`Ctrl+B`/`Alt+Z`), subagent dashboard, show-all, and todo fold are r
 - Plugins may also contribute one text line above the prompt, or a compact rich status view of up to three rows when the host exposes `tuiStatus.registerView`.
 - Rich views receive only host `Box`, `Text`, `Image`, and terminal size. Click/hover/drag work in fullscreen, and the view never owns the keyboard.
 - `Image` takes decoded RGBA pixels plus a same-size cell fallback.
-- After a successful Kitty probe, the host centers the image at its natural aspect ratio
+- After a successful Kitty probe, the host scales the image to the cell box's physical
+  pixels — downsampling or enlarging as needed — and centers it at its natural aspect ratio
   using terminal-reported cell geometry (or a conservative default), adding transparent
-  letterboxing and downsampling when needed. Otherwise it renders the fallback (including
-  inline, accessibility, and multiplexer sessions).
+  letterboxing only when the aspect ratios differ. Otherwise it renders the fallback
+  (including inline, accessibility, and multiplexer sessions).
 - Plugins provide the keyboard path for the same action through a slash command or `tuiShortcuts`.
 - A refused rich registration returns `undefined`; an admitted one returns a disposer that removes both the view and its Cordis effect.
 

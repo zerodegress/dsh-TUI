@@ -152,10 +152,16 @@ function plausibleTerminalCellSize(
 }
 
 /**
- * Prepare an RGBA raster that fits a laid-out cell rectangle without
- * distortion. The transparent canvas has the terminal rectangle's physical
- * aspect ratio; the host only downsamples source pixels and centers them
- * inside it. Kitty can then scale that bounded canvas to the requested cells.
+ * Prepare an RGBA raster for a laid-out cell rectangle without distortion. The
+ * transparent canvas is that rectangle's own physical pixel box; the source is
+ * scaled into it (up or down) and centered, so its aspect ratio is preserved.
+ *
+ * The raster must be the box's pixels, not merely an exact-ratio canvas of
+ * some size: a terminal that scales the payload to the requested `c`/`r` cells
+ * renders either one identically, while a terminal that paints the payload at
+ * its native pixel size (Ghostty) shows a smaller canvas at that smaller size
+ * and leaves the reserved slot mostly empty. Shipping the box's pixels keeps
+ * the reserved area and the drawn artwork the same size everywhere.
  */
 export function fitTerminalImageSource(
   source: TerminalImageSource,
@@ -173,42 +179,37 @@ export function fitTerminalImageSource(
     presentation === 'preview' ? TERMINAL_IMAGE_PREVIEW_MAX_BYTES : TERMINAL_IMAGE_MAX_BYTES,
   )
 
-  // Kitty scales the raster to the requested cell rectangle, so its canvas
-  // must have that rectangle's exact physical aspect ratio. Rounding each
-  // side independently would distort tiny sources. Use the smallest integer
-  // multiple of the reduced ratio that contains the fitted source.
+  // The canvas must have the cell rectangle's exact physical aspect ratio, so
+  // each side is one integer multiple of the reduced ratio — rounding the two
+  // sides independently would distort tiny sources. Take the largest multiple
+  // the allocation budget allows: that is the rectangle's own pixel box for
+  // every placement whose box fits the budget.
   const requestedWidth = safeColumns * cell.width
   const requestedHeight = safeRows * cell.height
   const divisor = greatestCommonDivisor(requestedWidth, requestedHeight)
   let ratioWidth = requestedWidth / divisor
   let ratioHeight = requestedHeight / divisor
-  let maximumMultiple = Math.floor(
+  let multiple = Math.floor(
     Math.min(boxWidth / ratioWidth, boxHeight / ratioHeight),
   )
 
   // Some coprime physical dimensions need more pixels than the allocation
   // budget even at their smallest exact ratio. Only then use the nearest
   // uniformly bounded raster ratio.
-  if (maximumMultiple < 1) {
+  if (multiple < 1) {
     const boundedDivisor = greatestCommonDivisor(boxWidth, boxHeight)
     ratioWidth = boxWidth / boundedDivisor
     ratioHeight = boxHeight / boundedDivisor
-    maximumMultiple = boundedDivisor
+    multiple = boundedDivisor
   }
 
-  const multiple = Math.min(
-    maximumMultiple,
-    Math.max(
-      1,
-      Math.ceil(source.width / ratioWidth),
-      Math.ceil(source.height / ratioHeight),
-    ),
-  )
   const canvasWidth = ratioWidth * multiple
   const canvasHeight = ratioHeight * multiple
 
+  // Fit the source to the canvas in both directions: a source smaller than the
+  // box is enlarged here rather than left at its native pixel size, which is
+  // what fills the reserved cells on a terminal that does not scale payloads.
   const canvasScale = Math.min(
-    1,
     canvasWidth / source.width,
     canvasHeight / source.height,
   )

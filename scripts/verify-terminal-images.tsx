@@ -183,6 +183,43 @@ assert.equal(
 )
 assert.ok(fittedWideBanner.data.byteLength <= 4 * 1024 * 1024)
 
+// The raster handed to the protocol must be the cell box's own physical
+// pixels. Capping the canvas at the smallest exact-ratio raster that contains
+// the source leaves a coarse physical ratio (a HiDPI cell) at a fraction of the
+// box the layout still reserves, and a terminal that paints the payload without
+// scaling draws the artwork at that fraction (issue #1381).
+const hidpiCell = { width: 36, height: 76 }
+const art: TerminalImageSource = { data: new Uint8Array(410 * 411 * 4), width: 410, height: 411 }
+for (let offset = 0; offset < art.data.length; offset += 4) {
+  art.data[offset] = 240
+  art.data[offset + 1] = 200
+  art.data[offset + 2] = 210
+  art.data[offset + 3] = 255
+}
+const fittedArt = fitTerminalImageSource(art, 23, 11, hidpiCell, 'transcript')
+assert.deepEqual(
+  [fittedArt.width, fittedArt.height],
+  [23 * hidpiCell.width, 11 * hidpiCell.height],
+  'a HiDPI box must ship its own pixels, not the smallest canvas that holds the source',
+)
+let artLeft = fittedArt.width
+let artTop = fittedArt.height
+let artRight = -1
+let artBottom = -1
+for (let y = 0; y < fittedArt.height; y++) {
+  for (let x = 0; x < fittedArt.width; x++) {
+    if (fittedArt.data[(y * fittedArt.width + x) * 4 + 3] === 0) continue
+    if (x < artLeft) artLeft = x
+    if (x > artRight) artRight = x
+    if (y < artTop) artTop = y
+    if (y > artBottom) artBottom = y
+  }
+}
+assert.ok(
+  artRight - artLeft + 1 >= fittedArt.width * 0.95 && artBottom - artTop + 1 >= fittedArt.height * 0.95,
+  `the artwork is scaled into that box (drawn ${artRight - artLeft + 1}x${artBottom - artTop + 1} of ${fittedArt.width}x${fittedArt.height})`,
+)
+
 const guardedPixels = new Uint8Array([9, 1, 2, 3, 4, 9])
 const subarrayTransmission = transmitKittyRgba(102, {
   data: guardedPixels.subarray(1, 5),
@@ -207,8 +244,12 @@ const placement = {
 }
 const rawManager = new KittyGraphicsManager({ firstImageId: 601, compress: false })
 const rawPlacement = rawManager.reconcile([placement])
+// Raw mode carries the fitted raster untouched, so the decoded payload equals
+// the fitter's output — not the unpacked source, which the box enlarges.
+const fittedSource = fitTerminalImageSource(source, placement.columns, placement.rows)
 assert.doesNotMatch(rawPlacement, /o=z/u, 'raw uploads must bypass the terminal zlib decoder')
-assert.deepEqual(rgbaFromTransmission(rawPlacement).data, Buffer.from(source.data))
+assert.deepEqual(rgbaFromTransmission(rawPlacement).data, Buffer.from(fittedSource.data),
+  'raw uploads must carry the fitted raster without an encoding step')
 assert.equal(rawManager.reconcile([placement]), '', 'raw uploads retain the stable-frame cache')
 rawManager.setCompression(true)
 const compressedVariant = rawManager.reconcile([placement])
@@ -220,7 +261,7 @@ assert.doesNotMatch(restoredRaw, /\x1b_Ga=t,/u)
 rawManager.invalidateAll()
 const rawAfterClear = rawManager.reconcile([placement])
 assert.doesNotMatch(rawAfterClear, /o=z/u, 'screen clears must never restore compressed uploads in raw mode')
-assert.deepEqual(rgbaFromTransmission(rawAfterClear).data, Buffer.from(source.data))
+assert.deepEqual(rgbaFromTransmission(rawAfterClear).data, Buffer.from(fittedSource.data))
 
 const first = manager.reconcile([placement])
 assert.match(first, /a=t,t=d,f=32/u)
